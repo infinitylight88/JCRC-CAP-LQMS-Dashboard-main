@@ -1,0 +1,20 @@
+[project]
+name = "labqms-backend"
+version = "0.1.0"
+description = "Backend API for JCRC LabQMS data entry and management."
+readme = "README.md"
+requires-python = ">=3.11"
+
+dependencies = [
+  "fastapi>=0.111.0,<0.112.0",
+  "uvicorn[standard]>=0.23.0,<0.24.0",
+  "pydantic-settings>=1.0.0",
+  "python-dotenv>=1.2.0",
+  "sqlalchemy>=2.0.0,<2.1.0",
+  "psycopg[binary]>=3.2.0,<3.4.0",
+  "alembic>=1.18.0,<1.19.0",
+]
+
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
