@@ -35,6 +35,7 @@ class StaffCreate(BaseModel):
     phone: Optional[str]
     status: Optional[str]
     section_ids: list[int] = Field(min_length=1)
+    competency_procedure_ids: list[int] = []
 
 class StaffRead(BaseModel):
     id: int
@@ -284,7 +285,7 @@ class LaboratorySectionWithSOPsRead(LaboratorySectionRead):
 
 class EquipmentCreate(BaseModel):
     name: str
-    section_ids: list[int]
+    section_ids: list[int] = Field(min_length=1)
 
 class EquipmentRead(BaseModel):
     id: int

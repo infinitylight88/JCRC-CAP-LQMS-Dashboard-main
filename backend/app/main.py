@@ -68,6 +68,10 @@ def read_competency_procedures(skip: int = 0, limit: int = 100, db: Session = De
 def create_staff(staff: schemas.StaffCreate, db: Session = Depends(get_db)):
     if db.query(models.LaboratorySection).filter(models.LaboratorySection.id.in_(staff.section_ids)).count() != len(set(staff.section_ids)):
         raise HTTPException(status_code=404, detail="One or more selected sections were not found")
+    if db.query(models.CompetencyProcedure).filter(
+        models.CompetencyProcedure.id.in_(staff.competency_procedure_ids)
+    ).count() != len(set(staff.competency_procedure_ids)):
+        raise HTTPException(status_code=404, detail="One or more selected competencies were not found")
     return crud.create_staff(db, staff)
 
 @app.get("/staff", response_model=list[schemas.StaffRead])
@@ -175,6 +179,11 @@ def import_sop_docs_endpoint(db: Session = Depends(get_db)):
 
 @app.post("/equipment", response_model=schemas.EquipmentRead)
 def create_equipment(equipment: schemas.EquipmentCreate, db: Session = Depends(get_db)):
+    matching_sections = db.query(models.LaboratorySection).filter(
+        models.LaboratorySection.id.in_(equipment.section_ids)
+    ).count()
+    if matching_sections != len(set(equipment.section_ids)):
+        raise HTTPException(status_code=404, detail="One or more selected sections were not found")
     return crud.create_equipment(db, equipment)
 
 @app.get("/equipment", response_model=list[schemas.EquipmentRead])

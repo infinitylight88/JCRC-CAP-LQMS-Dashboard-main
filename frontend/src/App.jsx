@@ -28,6 +28,7 @@ function App() {
   const [showSopForms, setShowSopForms] = useState(false);
   const [showEquipmentForm, setShowEquipmentForm] = useState(false);
   const [notification, setNotification] = useState(null);
+  const [loadError, setLoadError] = useState('');
 
   const [sopBookForm, setSopBookForm] = useState({
     code: '',
@@ -74,7 +75,8 @@ function App() {
     email: '',
     phone: '',
     status: 'active',
-    section_ids: []
+    section_ids: [],
+    competency_procedure_ids: []
   });
 
   useEffect(() => {
@@ -82,28 +84,29 @@ function App() {
   }, []);
 
   const fetchAll = async () => {
-    const [sopBookRes, sopRes, equipmentRes, testRes, procedureRes] = await Promise.all([
+    const [sopBookResult, sopResult, equipmentResult, testResult, procedureResult, staffResult, competencyResult, sectionsResult] = await Promise.allSettled([
       api.get('/sop-books'),
       api.get('/sops'),
       api.get('/equipment'),
       api.get('/tests'),
-      api.get('/competency-procedures')
-    ]);
-
-    setSopBooks(sopBookRes.data);
-    setSops(sopRes.data);
-    setEquipment(equipmentRes.data);
-    setTests(testRes.data);
-    setCompetencyProcedures(procedureRes.data);
-    // Keep section selection available even if a separate staff-related request fails.
-    const [staffResult, competencyResult, sectionsResult] = await Promise.allSettled([
+      api.get('/competency-procedures'),
       api.get('/staff'),
       api.get('/competency-records'),
       api.get('/sections')
     ]);
+
+    if (sopBookResult.status === 'fulfilled') setSopBooks(sopBookResult.value.data);
+    if (sopResult.status === 'fulfilled') setSops(sopResult.value.data);
+    if (equipmentResult.status === 'fulfilled') setEquipment(equipmentResult.value.data);
+    if (testResult.status === 'fulfilled') setTests(testResult.value.data);
+    if (procedureResult.status === 'fulfilled') setCompetencyProcedures(procedureResult.value.data);
     if (staffResult.status === 'fulfilled') setStaff(staffResult.value.data);
     if (competencyResult.status === 'fulfilled') setCompetencyRecords(competencyResult.value.data);
     if (sectionsResult.status === 'fulfilled') setSections(sectionsResult.value.data);
+
+    const failures = [sopBookResult, sopResult, equipmentResult, testResult, procedureResult, staffResult, competencyResult, sectionsResult]
+      .filter((result) => result.status === 'rejected');
+    setLoadError(failures.length ? 'Some records could not be loaded. Refresh the page after checking that the API is running.' : '');
   };
 
   const onChange = (setter) => (e) => {
@@ -114,7 +117,11 @@ function App() {
   const submit = async (endpoint, form, resetFn) => {
     try {
       const payload = endpoint === '/staff'
-        ? { ...form, section_ids: form.section_ids.map(Number) }
+        ? {
+            ...form,
+            section_ids: form.section_ids.map(Number),
+            competency_procedure_ids: form.competency_procedure_ids.map(Number)
+          }
         : endpoint === '/competency-procedures'
           ? { ...form, section_id: Number(form.section_id), sop_ids: form.sop_ids.map(Number), equipment_ids: form.equipment_ids.map(Number) }
         : endpoint === '/competency-records'
@@ -173,7 +180,7 @@ function App() {
   const removeCompetencySop = (sopId) => {
     setProcedureForm((current) => ({ ...current, sop_ids: current.sop_ids.filter((id) => Number(id) !== sopId) }));
   };
-  const resetStaff = () => setStaffForm({ first_name: '', middle_name: '', last_name: '', email: '', phone: '', status: 'active', section_ids: [] });
+  const resetStaff = () => setStaffForm({ first_name: '', middle_name: '', last_name: '', email: '', phone: '', status: 'active', section_ids: [], competency_procedure_ids: [] });
   const nextAssessmentPhase = (staffId, procedureId) => {
     const procedure = competencyProcedures.find((item) => item.id === Number(procedureId));
     if (!staffId || !procedure) return 'Initial';
@@ -357,7 +364,14 @@ function App() {
           <div className="grid gap-6 lg:grid-cols-2">
             {notification && <Notification message={notification} />}
             <Panel title="Register Competency / Test Procedure that Requires Competency">
-              <form className="form-grid" onSubmit={(e) => { e.preventDefault(); submit('/competency-procedures', procedureForm, resetProcedure); }}>
+              <form className="form-grid" onSubmit={(e) => {
+                e.preventDefault();
+                if (procedureForm.sop_ids.length === 0) {
+                  setNotification('Select at least one applicable SOP before registering the competency procedure.');
+                  return;
+                }
+                submit('/competency-procedures', procedureForm, resetProcedure);
+              }}>
                 <label className="form-field">
                   <span>Section</span>
                   <select name="section_id" value={procedureForm.section_id} onChange={onChange(setProcedureForm)} className="input" required>
@@ -369,29 +383,6 @@ function App() {
                   <span>Competency / Test Procedure Title</span>
                   <input name="title" value={procedureForm.title} onChange={onChange(setProcedureForm)} className="input" required />
                 </label>
-                <label className="form-field">
-                  <span>Staff</span>
-                  <select name="staff_id" value={competencyForm.staff_id} onChange={onChange(setCompetencyForm)} className="input">
-                    <option value="">Select staff</option>
-                    {staff.map((s) => (<option key={s.id} value={s.id}>{s.employee_number ? `${s.employee_number} — ` : ''}{s.first_name} {s.last_name}</option>))}
-                  </select>
-                </label>
-                <label className="form-field">
-                  <span>Or create Staff</span>
-                  <div style={{display: 'flex', gap: 8}}>
-                    <input placeholder="First Last" className="input" onFocus={() => setActiveTab('staff')} />
-                    <button type="button" className="button" onClick={() => setActiveTab('staff')}>Add</button>
-                  </div>
-                </label>
-
-                <label className="form-field">
-                  <span>Test Procedure</span>
-                  <select name="test_id" value={competencyForm.test_id} onChange={onChange(setCompetencyForm)} className="input">
-                    <option value="">Select test procedure</option>
-                    {tests.map((t) => (<option key={t.id} value={t.id}>{t.code} — {t.name}</option>))}
-                  </select>
-                </label>
-
                 <div className="form-field sop-selector">
                   <span>Applicable SOPs</span>
                   <select name="sop_book_id" value={procedureForm.sop_book_id} onChange={onChange(setProcedureForm)} className="input">
@@ -408,48 +399,15 @@ function App() {
 
                 <label className="form-field">
                   <span>Equipment Used (optional)</span>
-                  <MultiSelect options={equipment} selected={procedureForm.equipment_ids} onChange={(ids) => setProcedureForm((current) => ({ ...current, equipment_ids: ids }))} placeholder="Select equipment used in this procedure" />
+                  <MultiSelect options={equipment} selected={procedureForm.equipment_ids} onChange={(ids) => setProcedureForm((current) => ({ ...current, equipment_ids: ids }))} placeholder="Select equipment used in this procedure" addLabel="Add equipment" />
                 </label>
 
-                <label className="form-field">
-                  <span>Assessment Phase</span>
-                  <select name="assessment_phase" value={competencyForm.assessment_phase} onChange={onChange(setCompetencyForm)} className="input">
-                    <option>Initial</option>
-                    <option>6-Mo</option>
-                    <option>Annual</option>
-                  </select>
-                </label>
-
-                <label className="form-field">
-                  <span>Assessment Date</span>
-                  <input type="date" name="assessment_date" value={competencyForm.assessment_date} onChange={onChange(setCompetencyForm)} className="input" />
-                </label>
-
-                <label className="form-field">
-                  <span>Next Review Date</span>
-                  <input type="date" name="next_review_date" value={competencyForm.next_review_date} onChange={onChange(setCompetencyForm)} className="input" />
-                </label>
-
-                <label className="form-field">
-                  <span>Competency Status</span>
-                  <select name="competency_status" value={competencyForm.competency_status} onChange={onChange(setCompetencyForm)} className="input">
-                    <option>Competent</option>
-                    <option>Needs Review</option>
-                    <option>Suspended</option>
-                  </select>
-                </label>
-
-                <label className="form-field">
-                  <span>Notes</span>
-                  <input type="text" name="notes" value={competencyForm.notes} onChange={onChange(setCompetencyForm)} className="input" />
-                </label>
-
-                <button className="button" type="submit" disabled={procedureForm.sop_ids.length === 0}>Register Competency Procedure</button>
+                <button className="button" type="submit">Register Competency Procedure</button>
               </form>
             </Panel>
 
             <Panel title="Registered Competencies / Test Procedures">
-              <Table columns={['Unique ID', 'Title', 'Section', 'Required SOPs']} data={competencyProcedures} renderRow={(procedure) => ([procedure.code, procedure.title, procedure.section?.name || 'N/A', procedure.sops.map((sop) => `${sop.index_code} - ${sop.title}`).join('; ')])} />
+              <Table columns={['Unique ID', 'Title', 'Section', 'Required SOPs']} data={competencyProcedures} renderRow={(procedure) => ([procedure.code, procedure.title, procedure.section?.name || 'N/A', <ApplicableSopsCell key={procedure.id} sops={procedure.sops} />])} />
             </Panel>
 
             <Panel title="Competency Assessment History">
@@ -491,6 +449,7 @@ function App() {
         return (
           <div className="grid gap-6 lg:grid-cols-2">
             {notification && <Notification message={notification} />}
+            {loadError && <div className="import-result error">{loadError}</div>}
             <Panel title="Register Laboratory Staff">
               <form className="form-grid" onSubmit={(e) => { e.preventDefault(); submit('/staff', staffForm, resetStaff); }}>
                 <label className="form-field">
@@ -535,88 +494,17 @@ function App() {
                   <span>Additional Sections the staff member is competent to work in</span>
                   <MultiSelect options={sections} selected={staffForm.section_ids} onChange={(ids) => setStaffForm((current) => ({ ...current, section_ids: ids }))} placeholder="Select one or more sections" />
                 </label>
+                <label className="form-field">
+                  <span>Competencies</span>
+                  <MultiSelect options={competencyProcedures} selected={staffForm.competency_procedure_ids} onChange={(ids) => setStaffForm((current) => ({ ...current, competency_procedure_ids: ids }))} placeholder="Select competencies held by this staff member" />
+                  <small className="field-help">Selected competencies are recorded as Initial, Competent when the staff member is registered.</small>
+                </label>
                 <button className="button" type="submit" disabled={staffForm.section_ids.length === 0}>Register Laboratory Staff</button>
               </form>
             </Panel>
 
             <Panel title="Registered Laboratory Staff by Section">
-              <Table columns={['Staff ID', 'Name', 'Email', 'Phone', 'Sections']} data={staff} renderRow={(s) => ([s.employee_number || 'N/A', [s.first_name, s.middle_name, s.last_name].filter(Boolean).join(' '), s.email || 'N/A', s.phone || 'N/A', s.staff_sections?.map((link) => link.section?.name).filter(Boolean).join(', ') || 'N/A'])} />
-            </Panel>
-            <Panel title="Record Staff Competency Assessment">
-              <form className="form-grid" onSubmit={(e) => { e.preventDefault(); submit('/competency-records', competencyForm, resetCompetency); }}>
-                <label className="form-field">
-                  <span>Laboratory Staff</span>
-                  <select name="staff_id" value={competencyForm.staff_id} onChange={onChange(setCompetencyForm)} className="input" required>
-                    <option value="">Select laboratory staff</option>
-                    {staff.map((s) => <option key={s.id} value={s.id}>{s.employee_number} - {s.first_name} {s.last_name}</option>)}
-                  </select>
-                </label>
-                <label className="form-field">
-                  <span>Registered Competency / Test Procedure</span>
-                  <select name="procedure_id" value={competencyForm.procedure_id} onChange={onChange(setCompetencyForm)} className="input" required>
-                    <option value="">Select competency procedure</option>
-                    {competencyProcedures.map((procedure) => <option key={procedure.id} value={procedure.id}>{procedure.code} - {procedure.title}</option>)}
-                  </select>
-                </label>
-                <label className="form-field">
-                  <span>Assessment Phase</span>
-                  <select name="assessment_phase" value={competencyForm.assessment_phase} onChange={onChange(setCompetencyForm)} className="input">
-                    <option>Initial</option><option>6-Mo</option><option>Annual</option>
-                  </select>
-                  <small className="field-help">The system accepts only Initial, then 6-Mo, then Annual for each staff member and procedure.</small>
-                </label>
-                <label className="form-field"><span>Assessment Date</span><input type="date" name="assessment_date" value={competencyForm.assessment_date} onChange={onChange(setCompetencyForm)} className="input" required /></label>
-                <label className="form-field"><span>Next Review Date</span><input type="date" name="next_review_date" value={competencyForm.next_review_date} onChange={onChange(setCompetencyForm)} className="input" /></label>
-                <label className="form-field"><span>Competency Status</span><select name="competency_status" value={competencyForm.competency_status} onChange={onChange(setCompetencyForm)} className="input"><option>Competent</option><option>Needs Review</option><option>Suspended</option></select></label>
-                <label className="form-field"><span>Notes</span><input name="notes" value={competencyForm.notes} onChange={onChange(setCompetencyForm)} className="input" /></label>
-                <button className="button" type="submit">Save Competency Assessment</button>
-              </form>
-            </Panel>
-          </div>
-        );
-
-      case 'sops':
-        return (
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Panel title="Create SOP Book">
-              <Form fields={[
-                { name: 'code', label: 'Book Code', type: 'text' },
-                { name: 'name', label: 'Book Name', type: 'text' },
-                { name: 'description', label: 'Description', type: 'text' },
-                { name: 'book_number', label: 'Book Number', type: 'number' }
-              ]} data={sopBookForm} onChange={onChange(setSopBookForm)} onSubmit={(e) => { e.preventDefault(); submit('/sop-books', sopBookForm, resetSopBook); }} buttonLabel="Save SOP Book" />
-            </Panel>
-            <Panel title="Create SOP">
-              <Form fields={[
-                { name: 'book_id', label: 'SOP Book ID', type: 'number' },
-                { name: 'index_code', label: 'Index Code', type: 'text' },
-                { name: 'title', label: 'Title', type: 'text' },
-                { name: 'version', label: 'Version', type: 'text' },
-                { name: 'effective_date', label: 'Effective Date', type: 'date' },
-                { name: 'next_review_date', label: 'Next Review Date', type: 'date' },
-                { name: 'scope_distribution', label: 'Scope / Distribution', type: 'text' },
-                { name: 'status', label: 'Status', type: 'text' },
-                { name: 'description', label: 'Description', type: 'text' }
-              ]} data={sopForm} onChange={onChange(setSopForm)} onSubmit={(e) => { e.preventDefault(); submit('/sops', sopForm, resetSop); }} buttonLabel="Save SOP" />
-            </Panel>
-            <Panel title="Import SOPs from docs">
-              <div className="panel-content">
-                <p>Import SOP books and inventories from <code>docs/Lab_SOPs</code>.</p>
-                <button type="button" className="button" onClick={importSOPs}>Import SOPs</button>
-                {importResult && (
-                  <div className={`import-result ${importResult.status === 'error' ? 'error' : 'success'}`}>
-                    {importResult.status === 'error'
-                      ? `Error: ${importResult.message}`
-                      : `${importResult.books} SOP book(s) imported, ${importResult.sops} SOP(s) imported.`}
-                  </div>
-                )}
-              </div>
-            </Panel>
-            <Panel title="SOP Books">
-              <Table columns={['ID', 'Code', 'Name', 'Book #']} data={sopBooks} renderRow={(book) => ([book.id, book.code, book.name, book.book_number || 'N/A'])} />
-            </Panel>
-            <Panel title="SOP Registry">
-              <Table columns={['ID', 'Book', 'Index Code', 'Title', 'Version', 'Effective Date', 'Next Review', 'Scope / Distribution']} data={allSops} renderRow={(sop) => ([sop.id, sop.book?.code || 'N/A', sop.index_code, sop.title, sop.version || 'N/A', sop.effective_date || 'N/A', sop.next_review_date || 'N/A', sop.scope_distribution || 'N/A'])} />
+              <Table columns={['Staff ID', 'Name', 'Email', 'Phone', 'Sections', 'Competencies']} data={staff} renderRow={(s) => ([s.employee_number || 'N/A', [s.first_name, s.middle_name, s.last_name].filter(Boolean).join(' '), s.email || 'N/A', s.phone || 'N/A', s.staff_sections?.map((link) => link.section?.name).filter(Boolean).join(', ') || 'N/A', competencyRecords.filter((record) => record.staff_id === s.id).map((record) => competencyProcedures.find((procedure) => procedure.test_id === record.test_id)?.title || record.test?.name).filter(Boolean).join(', ') || 'None'])} />
             </Panel>
           </div>
         );
@@ -835,6 +723,52 @@ function Table({ columns, data, renderRow, rowClassName }) {
   );
 }
 
+function ApplicableSopsCell({ sops = [] }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const cellRef = useRef(null);
+  const count = sops.length;
+
+  useEffect(() => {
+    const closeWhenClickingOutside = (event) => {
+      if (cellRef.current && !cellRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener('mousedown', closeWhenClickingOutside);
+      return () => document.removeEventListener('mousedown', closeWhenClickingOutside);
+    }
+  }, [isOpen]);
+
+  return (
+    <div className="applicable-sops-cell" ref={cellRef}>
+      <span>{count} {count === 1 ? 'SOP' : 'SOPs'}</span>
+      {count > 0 && (
+        <button
+          type="button"
+          className="view-sops-button"
+          aria-expanded={isOpen}
+          onClick={() => setIsOpen((open) => !open)}
+        >
+          {isOpen ? 'Hide SOPs' : 'View SOPs'}
+        </button>
+      )}
+      {isOpen && (
+        <div className="applicable-sops-popover" role="dialog" aria-label="Applicable SOPs">
+          <div className="applicable-sops-popover-header">
+            <strong>Applicable SOPs</strong>
+            <button type="button" className="close-sops-button" onClick={() => setIsOpen(false)} aria-label="Close applicable SOPs">×</button>
+          </div>
+          <ul>
+            {sops.map((sop) => <li key={sop.id}>{sop.title}</li>)}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SummaryCard({ title, value }) {
   return (
     <div className="summary-card">
@@ -861,7 +795,7 @@ function Notification({ message }) {
   );
 }
 
-function MultiSelect({ options, selected, onChange, placeholder }) {
+function MultiSelect({ options, selected, onChange, placeholder, addLabel = 'Add section' }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [duplicateMessage, setDuplicateMessage] = useState('');
   const containerRef = useRef(null);
@@ -901,7 +835,7 @@ function MultiSelect({ options, selected, onChange, placeholder }) {
       <div className="multi-select-tags">
         {selectedSections.map((section) => (
           <div key={section.id} className="tag">
-            <span>{section.name}</span>
+            <span>{section.name || section.title}</span>
             <button
               type="button"
               className="tag-remove"
@@ -913,7 +847,7 @@ function MultiSelect({ options, selected, onChange, placeholder }) {
           </div>
         ))}
         {selected.length === 0 && (
-          <span className="multi-select-placeholder">Select sections...</span>
+          <span className="multi-select-placeholder">{placeholder}</span>
         )}
       </div>
       
@@ -923,7 +857,7 @@ function MultiSelect({ options, selected, onChange, placeholder }) {
           className="dropdown-toggle"
           onClick={() => setDropdownOpen(!dropdownOpen)}
         >
-          Add Section ▼
+          {addLabel} ▼
         </button>
         
         {dropdownOpen && (
@@ -936,7 +870,7 @@ function MultiSelect({ options, selected, onChange, placeholder }) {
                   className="dropdown-item"
                   onClick={() => handleAdd(section.id)}
                 >
-                  + {section.name}
+                  + {section.name || section.title}
                 </button>
               ))
             ) : (

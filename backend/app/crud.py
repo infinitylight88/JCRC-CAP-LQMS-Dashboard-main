@@ -1,3 +1,4 @@
+from datetime import date
 from sqlalchemy.orm import Session
 import uuid
 
@@ -31,12 +32,25 @@ def get_tests(db: Session):
 
 
 def create_staff(db: Session, staff: schemas.StaffCreate):
-    data = staff.dict(exclude={"section_ids"})
+    data = staff.dict(exclude={"section_ids", "competency_procedure_ids"})
     db_staff = models.Staff(**data, employee_number=generate_staff_code(), section_id=staff.section_ids[0])
     db.add(db_staff)
     db.flush()
     for section_id in set(staff.section_ids):
         db.add(models.StaffSection(staff_id=db_staff.id, section_id=section_id))
+    procedures = db.query(models.CompetencyProcedure).filter(
+        models.CompetencyProcedure.id.in_(staff.competency_procedure_ids)
+    ).all()
+    for procedure in procedures:
+        db_record = models.CompetencyRecord(
+            staff_id=db_staff.id,
+            test_id=procedure.test_id,
+            assessment_phase="Initial",
+            assessment_date=date.today(),
+            competency_status="Competent",
+        )
+        db_record.sops = procedure.sops
+        db.add(db_record)
     db.commit()
     db.refresh(db_staff)
     return db_staff
@@ -173,7 +187,7 @@ def create_equipment(db: Session, equipment: schemas.EquipmentCreate):
     db.flush()  # Flush to get the ID without committing
     
     # Add sections
-    for section_id in equipment.section_ids:
+    for section_id in set(equipment.section_ids):
         equipment_section = models.EquipmentSection(
             equipment_id=db_equipment.id,
             section_id=section_id
@@ -186,4 +200,4 @@ def create_equipment(db: Session, equipment: schemas.EquipmentCreate):
 
 
 def get_equipment(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(models.Equipment).offset(skip).limit(limit).all()
+    return db.query(models.Equipment).order_by(models.Equipment.name).offset(skip).limit(limit).all()
