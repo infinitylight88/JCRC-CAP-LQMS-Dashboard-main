@@ -81,6 +81,8 @@ class Test(Base):
     section = relationship("LaboratorySection")
     category = relationship("TestCategory")
 
+# Staff members are the people recorded in the system.
+# They can be assigned to one or more sections and can have competency records tied to procedures.
 class Staff(Base):
     __tablename__ = "staff"
 
@@ -129,6 +131,8 @@ class StaffSection(Base):
     section = relationship("LaboratorySection")
 
 
+# Competency procedures define the requirements for assessing whether a person is competent for a test.
+# Each procedure is linked to one section, one generated test, many SOPs, and optional equipment.
 class CompetencyProcedure(Base):
     __tablename__ = "competency_procedures"
 

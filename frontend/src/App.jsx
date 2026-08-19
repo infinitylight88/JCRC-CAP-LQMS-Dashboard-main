@@ -5,15 +5,21 @@ const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api'
 });
 
+// The main app is a single-page dashboard for the laboratory quality system.
+// Each tab represents a functional area: dashboard, competencies, staff, SOPs, and equipment.
+// Future tabs for departmental dashboards (Microbiology, Virology) are placeholders for Coming Soon pages.
 const tabs = [
   { key: 'dashboard', label: 'Dashboard' },
   { key: 'competency', label: 'Competencies' },
   { key: 'staff', label: 'Laboratory Staffing' },
   { key: 'sops', label: 'SOPs' },
-  { key: 'equipment', label: 'Equipment' }
+  { key: 'equipment', label: 'Equipment' },
+  { key: 'microbiology', label: 'Microbiology' },
+  { key: 'virology', label: 'Virology' }
 ];
 
 function App() {
+  // activeTab controls which section of the dashboard is currently visible.
   const [activeTab, setActiveTab] = useState('dashboard');
   const [sopBooks, setSopBooks] = useState([]);
   const [allSops, setSops] = useState([]);
@@ -27,6 +33,7 @@ function App() {
   const [selectedBookId, setSelectedBookId] = useState(null);
   const [showSopForms, setShowSopForms] = useState(false);
   const [showEquipmentForm, setShowEquipmentForm] = useState(false);
+  const [showCompetencyForm, setShowCompetencyForm] = useState(false);
   const [notification, setNotification] = useState(null);
   const [loadError, setLoadError] = useState('');
 
@@ -79,10 +86,12 @@ function App() {
     competency_procedure_ids: []
   });
 
+  // Load all core records once when the app starts so the dashboard is populated.
   useEffect(() => {
     fetchAll();
   }, []);
 
+  // This function fetches all of the main datasets from the backend and updates component state.
   const fetchAll = async () => {
     const [sopBookResult, sopResult, equipmentResult, testResult, procedureResult, staffResult, competencyResult, sectionsResult] = await Promise.allSettled([
       api.get('/sop-books'),
@@ -114,20 +123,41 @@ function App() {
     setter((prev) => ({ ...prev, [name]: value }));
   };
 
+  // Shared save function used by all forms.
+  // It prepares the payload for the selected backend route, posts it, refreshes data, and resets the form.
+  // This shared submit handler is the heart of data entry.
+  // It translates the form state into the exact JSON that the backend expects,
+  // sends the request, refreshes all data, and resets the form after a successful save.
   const submit = async (endpoint, form, resetFn) => {
     try {
       const payload = endpoint === '/staff'
         ? {
+            // Staff registration sends a list of section IDs and competency procedure IDs,
+            // because one staff member can belong to multiple sections and hold multiple competencies.
             ...form,
             section_ids: form.section_ids.map(Number),
             competency_procedure_ids: form.competency_procedure_ids.map(Number)
           }
         : endpoint === '/competency-procedures'
-          ? { ...form, section_id: Number(form.section_id), sop_ids: form.sop_ids.map(Number), equipment_ids: form.equipment_ids.map(Number) }
+          ? {
+              // Competency procedures are linked to a section, selected SOPs, and optional equipment.
+              ...form,
+              section_id: Number(form.section_id),
+              sop_ids: form.sop_ids.map(Number),
+              equipment_ids: form.equipment_ids.map(Number)
+            }
         : endpoint === '/competency-records'
           ? (() => {
+            // For a competency assessment, the system looks up the selected procedure,
+            // then automatically fills in the related test ID and SOP list.
             const procedure = competencyProcedures.find((item) => item.id === Number(form.procedure_id));
-            return { ...form, staff_id: Number(form.staff_id), test_id: procedure.test_id, sop_ids: procedure.sops.map((sop) => sop.id), assessment_phase: nextAssessmentPhase(form.staff_id, form.procedure_id) };
+            return {
+              ...form,
+              staff_id: Number(form.staff_id),
+              test_id: procedure.test_id,
+              sop_ids: procedure.sops.map((sop) => sop.id),
+              assessment_phase: nextAssessmentPhase(form.staff_id, form.procedure_id)
+            };
           })()
           : endpoint === '/equipment'
             ? { name: form.name, section_ids: form.section_ids.map(Number) }
@@ -138,12 +168,15 @@ function App() {
       console.log('Response:', result.data);
       
       if (endpoint === '/equipment' || endpoint === '/staff' || endpoint === '/competency-procedures' || endpoint === '/competency-records') {
+        // User feedback is shown after a successful save.
+        // This also hides the form after saving so the dashboard returns to the table view.
         setNotification(endpoint === '/staff' ? `Laboratory staff ${result.data.employee_number} registered successfully.`
           : endpoint === '/competency-procedures' ? `Competency procedure ${result.data.code} registered successfully.`
           : endpoint === '/competency-records' ? 'Competency assessment recorded successfully.'
           : `added "${result.data.name}"`);
         setTimeout(() => setNotification(null), 3000);
         setShowEquipmentForm(false);
+        setShowCompetencyForm(false);
       }
       await fetchAll();
       resetFn();
@@ -181,10 +214,18 @@ function App() {
     setProcedureForm((current) => ({ ...current, sop_ids: current.sop_ids.filter((id) => Number(id) !== sopId) }));
   };
   const resetStaff = () => setStaffForm({ first_name: '', middle_name: '', last_name: '', email: '', phone: '', status: 'active', section_ids: [], competency_procedure_ids: [] });
+  // This function decides the next allowed competency phase for a staff member.
+  // It enforces the usual sequence: Initial -> 6-Mo -> Annual.
+  // This prevents the user from entering the wrong assessment phase in the wrong order.
   const nextAssessmentPhase = (staffId, procedureId) => {
     const procedure = competencyProcedures.find((item) => item.id === Number(procedureId));
     if (!staffId || !procedure) return 'Initial';
-    const phases = new Set(competencyRecords.filter((record) => record.staff_id === Number(staffId) && record.test_id === procedure.test_id).map((record) => record.assessment_phase));
+    const phases = new Set(
+      competencyRecords
+        .filter((record) => record.staff_id === Number(staffId) && record.test_id === procedure.test_id)
+        .map((record) => record.assessment_phase)
+    );
+
     return !phases.has('Initial') ? 'Initial' : (!phases.has('6-Mo') ? '6-Mo' : 'Annual');
   };
 
@@ -357,58 +398,80 @@ function App() {
       }
 
       case 'competency': {
+        // This tab is the heart of the training-validation workflow.
+        // It lets the user define a competency procedure, then later assign that procedure to staff members.
+        // The form stays collapsed until the user clicks the + button, which keeps the table view clean.
         const sops = procedureForm.sop_book_id
           ? allSops.filter((sop) => sop.book_id === Number(procedureForm.sop_book_id))
           : [];
         return (
           <div className="grid gap-6 lg:grid-cols-2">
             {notification && <Notification message={notification} />}
-            <Panel title="Register Competency / Test Procedure that Requires Competency">
-              <form className="form-grid" onSubmit={(e) => {
-                e.preventDefault();
-                if (procedureForm.sop_ids.length === 0) {
-                  setNotification('Select at least one applicable SOP before registering the competency procedure.');
-                  return;
-                }
-                submit('/competency-procedures', procedureForm, resetProcedure);
-              }}>
-                <label className="form-field">
-                  <span>Section</span>
-                  <select name="section_id" value={procedureForm.section_id} onChange={onChange(setProcedureForm)} className="input" required>
-                    <option value="">Select section</option>
-                    {sections.map((section) => (<option key={section.id} value={section.id}>{section.code} - {section.name}</option>))}
-                  </select>
-                </label>
-                <label className="form-field">
-                  <span>Competency / Test Procedure Title</span>
-                  <input name="title" value={procedureForm.title} onChange={onChange(setProcedureForm)} className="input" required />
-                </label>
-                <div className="form-field sop-selector">
-                  <span>Applicable SOPs</span>
-                  <select name="sop_book_id" value={procedureForm.sop_book_id} onChange={onChange(setProcedureForm)} className="input">
-                    <option value="">First select an SOP book</option>
-                    {sopBooks.map((book) => (<option key={book.id} value={book.id}>{book.code} — {book.name}</option>))}
-                  </select>
-                  <select value="" disabled={!procedureForm.sop_book_id} onChange={(event) => addCompetencySop(event.target.value)} className="input">
-                    <option value="">Then add an SOP from the selected book</option>
-                    {sops.map((sop) => (<option key={sop.id} value={sop.id}>{sop.index_code} — {sop.title}</option>))}
-                  </select>
-                  {selectedCompetencySops.length > 0 && <div className="sop-tags">{selectedCompetencySops.map((sop) => (<button type="button" className="sop-tag" key={sop.id} onClick={() => removeCompetencySop(sop.id)}>{sop.index_code} — {sop.title} ×</button>))}</div>}
-                  <small className="field-help">Select one or more SOPs. Click a tag to remove it.</small>
-                </div>
+            <div className="equipment-container" style={{ gridColumn: '1 / -1' }}>
+              <div className="equipment-header">
+                <h2>Registered Competencies / Test Procedures</h2>
+                {/* The + button is used to reveal or hide the form while keeping the list of registered procedures visible. */}
+                <button className="add-button" type="button" onClick={() => setShowCompetencyForm((show) => !show)} aria-label={showCompetencyForm ? 'Hide competency form' : 'Show competency form'}>
+                  {showCompetencyForm ? '−' : '+'}
+                </button>
+              </div>
+              <p className="field-help" style={{ margin: '0 0 12px 0' }}>
+                Use this section to define each competency requirement for a test or procedure. Select the applicable section, the relevant SOPs, and the equipment involved, then save. The registered competency list stays visible as your working table.
+              </p>
+              {showCompetencyForm && (
+                <Panel title="Register Competency / Test Procedure that Requires Competency">
+                  <form className="form-grid" onSubmit={(e) => {
+                    e.preventDefault();
+                    // A competency procedure is not valid without at least one applicable SOP.
+                    if (procedureForm.sop_ids.length === 0) {
+                      setNotification('Select at least one applicable SOP before registering the competency procedure.');
+                      setTimeout(() => setNotification(null), 3000);
+                      return;
+                    }
+                    // Save the new procedure and then collapse the form back to the table view.
+                    submit('/competency-procedures', procedureForm, resetProcedure);
+                  }}>
+                    <label className="form-field">
+                      <span>Section</span>
+                      <select name="section_id" value={procedureForm.section_id} onChange={onChange(setProcedureForm)} className="input" required>
+                        <option value="">Select section</option>
+                        {sections.map((section) => (<option key={section.id} value={section.id}>{section.code} - {section.name}</option>))}
+                      </select>
+                    </label>
+                    <label className="form-field">
+                      <span>Competency / Test Procedure Title</span>
+                      <input name="title" value={procedureForm.title} onChange={onChange(setProcedureForm)} className="input" required />
+                    </label>
+                    <div className="form-field sop-selector">
+                      <span>Applicable SOPs</span>
+                      <select name="sop_book_id" value={procedureForm.sop_book_id} onChange={onChange(setProcedureForm)} className="input">
+                        <option value="">First select an SOP book</option>
+                        {sopBooks.map((book) => (<option key={book.id} value={book.id}>{book.code} — {book.name}</option>))}
+                      </select>
+                      <select value="" disabled={!procedureForm.sop_book_id} onChange={(event) => addCompetencySop(event.target.value)} className="input">
+                        <option value="">Then add an SOP from the selected book</option>
+                        {sops.map((sop) => (<option key={sop.id} value={sop.id}>{sop.index_code} — {sop.title}</option>))}
+                      </select>
+                      {selectedCompetencySops.length > 0 && <div className="sop-tags">{selectedCompetencySops.map((sop) => (<button type="button" className="sop-tag" key={sop.id} onClick={() => removeCompetencySop(sop.id)}>{sop.index_code} — {sop.title} ×</button>))}</div>}
+                      <small className="field-help">Select one or more SOPs. Click a tag to remove it.</small>
+                    </div>
 
-                <label className="form-field">
-                  <span>Equipment Used (optional)</span>
-                  <MultiSelect options={equipment} selected={procedureForm.equipment_ids} onChange={(ids) => setProcedureForm((current) => ({ ...current, equipment_ids: ids }))} placeholder="Select equipment used in this procedure" addLabel="Add equipment" />
-                </label>
+                    <label className="form-field">
+                      <span>Equipment Used (optional)</span>
+                      <MultiSelect options={equipment} selected={procedureForm.equipment_ids} onChange={(ids) => setProcedureForm((current) => ({ ...current, equipment_ids: ids }))} placeholder="Select equipment used in this procedure" addLabel="Add equipment" />
+                    </label>
 
-                <button className="button" type="submit">Register Competency Procedure</button>
-              </form>
-            </Panel>
-
-            <Panel title="Registered Competencies / Test Procedures">
+                    <div className="form-actions">
+                      <button className="button" type="submit">Register Competency Procedure</button>
+                      <button className="button button-secondary" type="button" onClick={() => { setShowCompetencyForm(false); resetProcedure(); }}>
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                </Panel>
+              )}
               <Table columns={['Unique ID', 'Title', 'Section', 'Required SOPs']} data={competencyProcedures} renderRow={(procedure) => ([procedure.code, procedure.title, procedure.section?.name || 'N/A', <ApplicableSopsCell key={procedure.id} sops={procedure.sops} />])} />
-            </Panel>
+            </div>
 
             <Panel title="Competency Assessment History">
               {competencyRecords.length === 0 ? (
@@ -446,12 +509,21 @@ function App() {
       }
 
       case 'staff':
+        // This tab is used to register staff members and connect them to sections and competencies.
+        // The backend then creates initial competency records for selected procedures so the staff profile is immediately useful.
         return (
           <div className="grid gap-6 lg:grid-cols-2">
             {notification && <Notification message={notification} />}
             {loadError && <div className="import-result error">{loadError}</div>}
+            <p className="field-help" style={{ margin: '0 0 12px 0' }}>
+              Register each staff member with their section assignments and competency profile. After saving, the staff record is added to the table below and the form is cleared for the next entry.
+            </p>
             <Panel title="Register Laboratory Staff">
-              <form className="form-grid" onSubmit={(e) => { e.preventDefault(); submit('/staff', staffForm, resetStaff); }}>
+              <form className="form-grid" onSubmit={(e) => {
+                e.preventDefault();
+                // The staff save triggers backend validation and automatically creates competency records for the chosen competency procedures.
+                submit('/staff', staffForm, resetStaff);
+              }}>
                 <label className="form-field">
                   <span>Laboratory Staff ID</span>
                   <input className="input" value="Automatically generated when saved" disabled />
@@ -517,6 +589,9 @@ function App() {
               <h2>Equipment Registry</h2>
               <button className="add-button" onClick={() => setShowEquipmentForm(!showEquipmentForm)}>+</button>
             </div>
+            <p className="field-help" style={{ margin: '0 0 12px 0' }}>
+              Add equipment used in each section so the system can link instruments and methods to the correct competency workflow.
+            </p>
             {showEquipmentForm && (
               <Panel title="Add Equipment">
                 <div className="form-grid">
@@ -593,6 +668,28 @@ function App() {
           </div>
         );
 
+      case 'microbiology':
+      case 'virology':
+        return (
+          <div className="coming-soon-container">
+            <Panel title={activeTab === 'microbiology' ? 'Microbiology Dashboard' : 'Virology Dashboard'}>
+              <div className="coming-soon-content">
+                <div className="coming-soon-icon">🔬</div>
+                <h3>Coming Soon</h3>
+                <p>The {activeTab === 'microbiology' ? 'Microbiology' : 'Virology'} departmental dashboard is under development.</p>
+                <p className="coming-soon-message">This specialized dashboard will provide section-specific quality control, staff competency tracking, and SOP management for the {activeTab === 'microbiology' ? 'Microbiology' : 'Virology'} laboratory.</p>
+                <button 
+                  className="button" 
+                  onClick={() => setActiveTab('dashboard')}
+                  style={{ marginTop: '24px' }}
+                >
+                  Return to Main Dashboard
+                </button>
+              </div>
+            </Panel>
+          </div>
+        );
+
       default:
         return null;
     }
@@ -615,8 +712,13 @@ function App() {
             <SummaryCard title="Staff" value={staff.length} />
             <SummaryCard title="Competency Records" value={competencyRecords.length} />
             <SummaryCard title="Equipment" value={equipment.length} />
-            <SummaryCard title="Tests" value={tests.length} />
           </div>
+          {/* Animated glassy reflective effect that tracks the active tab */}
+          <div className="hero-shine" style={{
+            width: '140px',
+            left: `calc(36px + ${tabs.findIndex(t => t.key === activeTab) * 150}px)`,
+            transition: 'left 0.4s ease'
+          }} />
         </header>
 
         <div className="card">
@@ -787,6 +889,7 @@ function MetricCard({ label, value }) {
   );
 }
 
+// Small success/error message that appears after a save action.
 function Notification({ message }) {
   return (
     <div className="notification">
@@ -795,6 +898,7 @@ function Notification({ message }) {
   );
 }
 
+// Multi-select is used for many-to-many selections such as sections, equipment, and competency mappings.
 function MultiSelect({ options, selected, onChange, placeholder, addLabel = 'Add section' }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [duplicateMessage, setDuplicateMessage] = useState('');

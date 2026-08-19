@@ -5,6 +5,9 @@ from pydantic import Field
 
 from pydantic import BaseModel
 
+# This file defines the API contracts between the frontend and backend.
+# Each class describes what data is expected when a request is sent and what is returned to the browser.
+
 class LaboratorySectionRead(BaseModel):
     id: int
     code: str

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+# This file is responsible for turning markdown SOP documents into structured database records.
+# It reads the book files under docs/Lab_SOPs and creates SOP books and individual SOP entries.
+
 import re
 from datetime import date
 from pathlib import Path
@@ -14,6 +17,7 @@ SOP_SOURCE_DIR = ROOT_DIR / "docs" / "Lab_SOPs"
 
 
 def _parse_date(value: str) -> date | None:
+    """Convert SOP dates written in several formats into Python date objects."""
     if not value:
         return None
 
@@ -45,6 +49,7 @@ def _parse_date(value: str) -> date | None:
 
 
 def _normalize_row_text(row_text: str) -> str:
+    """Clean markdown table rows so they are easier to split into values."""
     row_text = row_text.replace("\r\n", "\n").replace("\n", " ")
     row_text = re.sub(r"\s*\|\s*", "|", row_text)
     row_text = re.sub(r"\s+", " ", row_text)
@@ -55,6 +60,7 @@ def _normalize_row_text(row_text: str) -> str:
 
 
 def _parse_book_metadata(text: str) -> dict[str, Any] | None:
+    """Read the book title and code from the markdown header."""
     match = re.search(r"^##\s*Book\s*(\d+):\s*(.*?)\s*\(([^)]+)\)", text, re.MULTILINE)
     if not match:
         return None
@@ -67,11 +73,13 @@ def _parse_book_metadata(text: str) -> dict[str, Any] | None:
 
 
 def _extract_inventory_section(text: str) -> str:
+    """Pull out the SOP inventory table from the markdown document."""
     match = re.search(r"###\s*SOP Inventory Table(.*?)(?:^##\s|\Z)", text, re.S | re.M)
     return match.group(1) if match else ""
 
 
 def _parse_sop_rows(inventory_text: str) -> list[dict[str, str]]:
+    """Convert the markdown table rows into structured SOP data."""
     row_pattern = re.compile(r"(?m)^\|\s*(\d+)\s*\|")
     starts = [match.start() for match in row_pattern.finditer(inventory_text)]
     rows: list[dict[str, str]] = []
@@ -104,6 +112,7 @@ def _parse_sop_rows(inventory_text: str) -> list[dict[str, str]]:
 
 
 def import_sop_docs(db: Session) -> dict[str, int]:
+    """Import all SOP documents from docs/Lab_SOPs if they are present."""
     imported_books = 0
     imported_sops = 0
 

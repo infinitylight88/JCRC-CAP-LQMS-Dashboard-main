@@ -211,6 +211,46 @@ The first operational data to be entered into the database will include:
 
 ---
 
+## Data Entry Workflow for Staff and Competency Tracking
+
+This is the workflow the team will use when entering the first operational records into the system.
+
+### 1. Register the department and sections
+Before a staff member is added, the lab must already have the relevant sections such as Hematology, Chemistry, Phlebotomy, and Microbiology registered in the system.
+
+### 2. Create competency procedures
+A competency procedure defines what a person must know or do to be considered competent for a test or analytical task. For each procedure, the user selects:
+- the relevant section
+- the test/procedure title
+- the applicable SOPs
+- optional equipment used in that process
+
+This is the quality-control backbone of the laboratory because it links method, document control, and tooling into a single competency definition.
+
+### 3. Register laboratory staff
+When a staff member is registered:
+- their personal profile is saved
+- their section assignments are stored
+- selected competencies are linked to them
+- the backend creates an initial competency record for each selected procedure
+
+This makes the staff database immediately usable for competency tracking rather than forcing the user to complete the competency records separately.
+
+### 4. Record competency assessment outcomes
+Once staff are in the database, competency assessments are recorded over time using phases such as:
+- Initial
+- 6-Mo
+- Annual
+
+The system uses the assessment history to decide the next valid phase. This keeps the process aligned with staff competency schedules.
+
+### 5. Use the table view as the main working screen
+The project intentionally keeps the full form hidden until the user clicks the + icon. This makes the table the default working surface and reduces screen clutter during routine data entry. Once the form is saved, it collapses again and the new record appears in the table immediately.
+
+This design is especially useful when the team is entering large numbers of records: the user stays focused on the list, adds only when needed, and receives a clear confirmation after the save.
+
+---
+
 ## Dashboard Development
 
 The dashboard will monitor:

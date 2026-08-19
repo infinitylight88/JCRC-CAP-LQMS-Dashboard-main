@@ -31,6 +31,7 @@ def get_tests(db: Session):
     return db.query(models.Test).order_by(models.Test.code).all()
 
 
+# Creates a new staff member and associates them with sections and competency procedures.
 def create_staff(db: Session, staff: schemas.StaffCreate):
     data = staff.dict(exclude={"section_ids", "competency_procedure_ids"})
     db_staff = models.Staff(**data, employee_number=generate_staff_code(), section_id=staff.section_ids[0])
@@ -60,6 +61,8 @@ def get_staff(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.Staff).order_by(models.Staff.employee_number).offset(skip).limit(limit).all()
 
 
+# When a competency procedure is created, a corresponding Test record is also created.
+# This keeps the competency process connected to the laboratory test catalog.
 def create_competency_procedure(db: Session, procedure: schemas.CompetencyProcedureCreate):
     code = generate_competency_code()
     test = models.Test(code=code, name=procedure.title, section_id=procedure.section_id, active=True)

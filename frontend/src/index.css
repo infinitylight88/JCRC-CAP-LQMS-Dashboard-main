@@ -77,6 +77,30 @@ button {
   pointer-events: none;
 }
 
+/* Animated glassy reflective light effect that moves across the hero header */
+.hero-shine {
+  position: absolute;
+  height: 100%;
+  top: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 20%,
+    rgba(255, 255, 255, 0.15) 50%,
+    rgba(255, 255, 255, 0.08) 80%,
+    transparent 100%
+  );
+  border-radius: 30px;
+  pointer-events: none;
+  animation: shine-pulse 3s ease-in-out infinite;
+  z-index: 2;
+}
+
+@keyframes shine-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.8; }
+}
+
 .hero > * { position: relative; z-index: 1; }
 
 @keyframes hero-shift { to { background-position: 100% 100%; } }
@@ -739,5 +763,46 @@ button {
   color: #dc2626;
   font-size: 12px;
   font-weight: 500;
+}
+
+/* Coming Soon Page Styles */
+.coming-soon-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+}
+
+.coming-soon-content {
+  text-align: center;
+  padding: 40px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.coming-soon-icon {
+  font-size: 4rem;
+  margin-bottom: 12px;
+}
+
+.coming-soon-content h3 {
+  font-size: 2rem;
+  margin: 0;
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.coming-soon-content p {
+  margin: 8px 0;
+  color: var(--text);
+  line-height: 1.6;
+  max-width: 500px;
+}
+
+.coming-soon-message {
+  color: var(--muted);
+  font-size: 0.95rem;
 }
 

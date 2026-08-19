@@ -10,10 +10,14 @@ ensure_schema_updates()
 with SessionLocal() as db:
     section_mapping.seed_sections_and_sop_links(db)
 
+# This is the main API application for the laboratory QMS.
+# It bootstraps the database, imports SOP documents, and exposes all routes used by the frontend.
 app = FastAPI(title="LabQMS Backend")
 
 @app.on_event("startup")
 def import_sop_docs_on_startup():
+    # Startup hook runs when the backend starts.
+    # It imports SOP books from the docs folder and ensures section mappings are refreshed.
     with SessionLocal() as db:
         result = sop_import.import_sop_docs(db)
         section_mapping.seed_sections_and_sop_links(db)
