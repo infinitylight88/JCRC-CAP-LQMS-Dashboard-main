@@ -248,6 +248,18 @@ class SOP(Base):
     book = relationship("SOPBook", back_populates="sops")
     sections = relationship("LaboratorySection", secondary="sop_section_links", back_populates="sops")
     competency_records = relationship("CompetencyRecord", secondary="competency_record_sops", back_populates="sops")
+    versions = relationship("SOPVersion", back_populates="sop", cascade="all, delete-orphan", order_by="SOPVersion.effective_date.desc()")
+
+class SOPVersion(Base):
+    __tablename__ = "sop_versions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sop_id = Column(Integer, ForeignKey("sops.id"), nullable=False)
+    version = Column(String, nullable=False)
+    effective_date = Column(Date)
+    next_review_date = Column(Date)
+
+    sop = relationship("SOP", back_populates="versions")
 
 
 class SOPSectionLink(Base):
@@ -321,6 +333,8 @@ class Equipment(Base):
     installation_date = Column(Date)
     status = Column(String)
     notes = Column(Text)
+    service_date = Column(Date)
+    next_service_date = Column(Date)
 
     manufacturer = relationship("Manufacturer", back_populates="equipment")
     supplier = relationship("Supplier", back_populates="equipment")

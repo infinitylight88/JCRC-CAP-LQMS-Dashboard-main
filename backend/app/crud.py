@@ -33,7 +33,7 @@ def get_tests(db: Session):
 
 # Creates a new staff member and associates them with sections and competency procedures.
 def create_staff(db: Session, staff: schemas.StaffCreate):
-    data = staff.dict(exclude={"section_ids", "competency_procedure_ids"})
+    data = staff.dict(exclude={"section_ids", "competency_procedure_ids", "competency_records"})
     db_staff = models.Staff(**data, employee_number=generate_staff_code(), section_id=staff.section_ids[0])
     db.add(db_staff)
     db.flush()
@@ -42,16 +42,33 @@ def create_staff(db: Session, staff: schemas.StaffCreate):
     procedures = db.query(models.CompetencyProcedure).filter(
         models.CompetencyProcedure.id.in_(staff.competency_procedure_ids)
     ).all()
+    records_by_procedure = {item.procedure_id: item for item in staff.competency_records}
     for procedure in procedures:
+        competency = records_by_procedure.get(procedure.id)
         db_record = models.CompetencyRecord(
             staff_id=db_staff.id,
             test_id=procedure.test_id,
-            assessment_phase="Initial",
-            assessment_date=date.today(),
-            competency_status="Competent",
+            assessment_phase=competency.assessment_phase if competency else "Initial",
+            assessment_date=competency.assessment_date if competency and competency.assessment_date else date.today(),
+            next_review_date=competency.next_review_date if competency else None,
+            competency_status=competency.competency_status if competency else "Competent",
+            notes=competency.notes if competency else None,
         )
         db_record.sops = procedure.sops
         db.add(db_record)
+    db.commit()
+    db.refresh(db_staff)
+    return db_staff
+
+
+def update_staff(db: Session, db_staff: models.Staff, staff: schemas.StaffUpdate):
+    data = staff.dict(exclude={"section_ids"})
+    for key, value in data.items():
+        setattr(db_staff, key, value)
+    db_staff.section_id = staff.section_ids[0]
+    db.query(models.StaffSection).filter(models.StaffSection.staff_id == db_staff.id).delete()
+    for section_id in set(staff.section_ids):
+        db.add(models.StaffSection(staff_id=db_staff.id, section_id=section_id))
     db.commit()
     db.refresh(db_staff)
     return db_staff
@@ -91,6 +108,31 @@ def create_competency_record(db: Session, record: schemas.CompetencyRecordCreate
     db.commit()
     db.refresh(db_record)
     return db_record
+
+
+def update_competency_record(db: Session, db_record: models.CompetencyRecord, record: schemas.CompetencyRecordUpdate):
+    for key, value in record.dict().items():
+        setattr(db_record, key, value)
+    db.commit()
+    db.refresh(db_record)
+    return db_record
+
+
+def renew_competency_record(db: Session, current_record: models.CompetencyRecord, renewal: schemas.CompetencyRenewalCreate):
+    renewed_record = models.CompetencyRecord(
+        staff_id=current_record.staff_id,
+        test_id=current_record.test_id,
+        assessment_phase=renewal.assessment_phase,
+        assessment_date=renewal.assessment_date,
+        next_review_date=renewal.next_review_date,
+        competency_status=renewal.competency_status,
+        notes=renewal.notes,
+    )
+    renewed_record.sops = list(current_record.sops)
+    db.add(renewed_record)
+    db.commit()
+    db.refresh(renewed_record)
+    return renewed_record
 
 
 def get_competency_records(db: Session, skip: int = 0, limit: int = 100):
@@ -176,6 +218,16 @@ def create_sop(db: Session, sop: schemas.SOPCreate):
     db.refresh(db_sop)
     return db_sop
 
+def create_sop_version(db: Session, db_sop: models.SOP, version: schemas.SOPVersionCreate):
+    db_sop.version = version.version
+    db_sop.effective_date = version.effective_date
+    db_sop.next_review_date = version.next_review_date
+    db_sop_version = models.SOPVersion(sop_id=db_sop.id, **version.dict())
+    db.add(db_sop_version)
+    db.commit()
+    db.refresh(db_sop)
+    return db_sop
+
 
 def get_sops(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.SOP).offset(skip).limit(limit).all()
@@ -184,7 +236,13 @@ def get_sops(db: Session, skip: int = 0, limit: int = 100):
 def create_equipment(db: Session, equipment: schemas.EquipmentCreate):
     db_equipment = models.Equipment(
         name=equipment.name,
-        code=generate_equipment_code()
+        code=generate_equipment_code(),
+        model=equipment.model,
+        serial_number=equipment.serial_number,
+        status=equipment.status,
+        notes=equipment.notes,
+        service_date=equipment.service_date,
+        next_service_date=equipment.next_service_date
     )
     db.add(db_equipment)
     db.flush()  # Flush to get the ID without committing
@@ -197,6 +255,16 @@ def create_equipment(db: Session, equipment: schemas.EquipmentCreate):
         )
         db.add(equipment_section)
     
+    db.commit()
+    db.refresh(db_equipment)
+    return db_equipment
+
+def update_equipment(db: Session, db_equipment: models.Equipment, equipment: schemas.EquipmentUpdate):
+    for key in ("name", "model", "serial_number", "status", "notes", "service_date", "next_service_date"):
+        setattr(db_equipment, key, getattr(equipment, key))
+    db.query(models.EquipmentSection).filter(models.EquipmentSection.equipment_id == db_equipment.id).delete()
+    for section_id in set(equipment.section_ids):
+        db.add(models.EquipmentSection(equipment_id=db_equipment.id, section_id=section_id))
     db.commit()
     db.refresh(db_equipment)
     return db_equipment

@@ -39,6 +39,24 @@ class StaffCreate(BaseModel):
     status: Optional[str]
     section_ids: list[int] = Field(min_length=1)
     competency_procedure_ids: list[int] = []
+    competency_records: list['StaffCompetencyCreate'] = []
+
+class StaffCompetencyCreate(BaseModel):
+    procedure_id: int
+    assessment_phase: str = 'Initial'
+    assessment_date: Optional[date]
+    next_review_date: Optional[date]
+    competency_status: Optional[str] = 'Competent'
+    notes: Optional[str] = None
+
+class StaffUpdate(BaseModel):
+    first_name: str
+    middle_name: Optional[str] = None
+    last_name: str
+    email: Optional[str]
+    phone: Optional[str]
+    status: Optional[str]
+    section_ids: list[int] = Field(min_length=1)
 
 class StaffRead(BaseModel):
     id: int
@@ -63,6 +81,20 @@ class CompetencyRecordCreate(BaseModel):
     assessment_date: Optional[date]
     next_review_date: Optional[date]
     competency_status: Optional[str]
+    notes: Optional[str]
+
+class CompetencyRecordUpdate(BaseModel):
+    assessment_phase: str
+    assessment_date: Optional[date]
+    next_review_date: Optional[date]
+    competency_status: Optional[str]
+    notes: Optional[str]
+
+class CompetencyRenewalCreate(BaseModel):
+    assessment_phase: str = 'Annual'
+    assessment_date: date
+    next_review_date: Optional[date]
+    competency_status: Optional[str] = 'Competent'
     notes: Optional[str]
 
 class CompetencyRecordRead(BaseModel):
@@ -279,9 +311,26 @@ class SOPRead(BaseModel):
     status: Optional[str]
     description: Optional[str]
     book: Optional[SOPBookRead]
+    sections: list[LaboratorySectionRead] = []
+    versions: list['SOPVersionRead'] = []
 
     class Config:
         orm_mode = True
+
+class SOPVersionRead(BaseModel):
+    id: int
+    sop_id: int
+    version: str
+    effective_date: Optional[date]
+    next_review_date: Optional[date]
+
+    class Config:
+        orm_mode = True
+
+class SOPVersionCreate(BaseModel):
+    version: str
+    effective_date: Optional[date]
+    next_review_date: Optional[date]
 
 class LaboratorySectionWithSOPsRead(LaboratorySectionRead):
     sops: list[SOPRead]
@@ -289,11 +338,27 @@ class LaboratorySectionWithSOPsRead(LaboratorySectionRead):
 class EquipmentCreate(BaseModel):
     name: str
     section_ids: list[int] = Field(min_length=1)
+    model: Optional[str] = None
+    serial_number: Optional[str] = None
+    location: Optional[str] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+    service_date: Optional[date] = None
+    next_service_date: Optional[date] = None
+
+class EquipmentUpdate(EquipmentCreate):
+    pass
 
 class EquipmentRead(BaseModel):
     id: int
     code: str
     name: str
+    model: Optional[str]
+    serial_number: Optional[str]
+    status: Optional[str]
+    notes: Optional[str]
+    service_date: Optional[date]
+    next_service_date: Optional[date]
     equipment_sections: list['EquipmentSectionRead'] = []
 
     class Config:

@@ -36,6 +36,14 @@ def ensure_schema_updates():
             with engine.begin() as connection:
                 connection.execute(text("ALTER TABLE competency_procedures ADD COLUMN test_id INTEGER"))
 
+        if "equipment" in inspector.get_table_names():
+            equipment_columns = {column["name"] for column in inspector.get_columns("equipment")}
+            with engine.begin() as connection:
+                if "service_date" not in equipment_columns:
+                    connection.execute(text("ALTER TABLE equipment ADD COLUMN service_date DATE"))
+                if "next_service_date" not in equipment_columns:
+                    connection.execute(text("ALTER TABLE equipment ADD COLUMN next_service_date DATE"))
+
     # Older data may have stored a single SOP on a competency record.
     # The new schema uses a many-to-many table, so this migration copies old values into the new table.
     if {"competency_records", "competency_record_sops"}.issubset(inspector.get_table_names()):

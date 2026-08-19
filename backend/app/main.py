@@ -82,6 +82,15 @@ def create_staff(staff: schemas.StaffCreate, db: Session = Depends(get_db)):
 def read_staff(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     return crud.get_staff(db, skip=skip, limit=limit)
 
+@app.put("/staff/{staff_id}", response_model=schemas.StaffRead)
+def update_staff(staff_id: int, staff: schemas.StaffUpdate, db: Session = Depends(get_db)):
+    db_staff = db.query(models.Staff).filter(models.Staff.id == staff_id).first()
+    if not db_staff:
+        raise HTTPException(status_code=404, detail="Staff not found")
+    if db.query(models.LaboratorySection).filter(models.LaboratorySection.id.in_(staff.section_ids)).count() != len(set(staff.section_ids)):
+        raise HTTPException(status_code=404, detail="One or more selected sections were not found")
+    return crud.update_staff(db, db_staff, staff)
+
 @app.post("/competency-records", response_model=schemas.CompetencyRecordRead)
 def create_competency_record(record: schemas.CompetencyRecordCreate, db: Session = Depends(get_db)):
     staff = db.query(models.Staff).filter(models.Staff.id == record.staff_id).first()
@@ -106,6 +115,20 @@ def create_competency_record(record: schemas.CompetencyRecordCreate, db: Session
 @app.get("/competency-records", response_model=list[schemas.CompetencyRecordRead])
 def read_competency_records(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     return crud.get_competency_records(db, skip=skip, limit=limit)
+
+@app.put("/competency-records/{record_id}", response_model=schemas.CompetencyRecordRead)
+def update_competency_record(record_id: int, record: schemas.CompetencyRecordUpdate, db: Session = Depends(get_db)):
+    db_record = db.query(models.CompetencyRecord).filter(models.CompetencyRecord.id == record_id).first()
+    if not db_record:
+        raise HTTPException(status_code=404, detail="Competency record not found")
+    return crud.update_competency_record(db, db_record, record)
+
+@app.post("/competency-records/{record_id}/renew", response_model=schemas.CompetencyRecordRead)
+def renew_competency_record(record_id: int, renewal: schemas.CompetencyRenewalCreate, db: Session = Depends(get_db)):
+    db_record = db.query(models.CompetencyRecord).filter(models.CompetencyRecord.id == record_id).first()
+    if not db_record:
+        raise HTTPException(status_code=404, detail="Competency record not found")
+    return crud.renew_competency_record(db, db_record, renewal)
 
 @app.post("/patients", response_model=schemas.PatientRead)
 def create_patient(patient: schemas.PatientCreate, db: Session = Depends(get_db)):
@@ -175,6 +198,13 @@ def create_sop(sop: schemas.SOPCreate, db: Session = Depends(get_db)):
 def read_sops(skip: int = 0, limit: int = 1000, db: Session = Depends(get_db)):
     return crud.get_sops(db, skip=skip, limit=limit)
 
+@app.post("/sops/{sop_id}/versions", response_model=schemas.SOPRead)
+def create_sop_version(sop_id: int, version: schemas.SOPVersionCreate, db: Session = Depends(get_db)):
+    db_sop = db.query(models.SOP).filter(models.SOP.id == sop_id).first()
+    if not db_sop:
+        raise HTTPException(status_code=404, detail="SOP not found")
+    return crud.create_sop_version(db, db_sop, version)
+
 @app.post("/sop-import", response_model=dict)
 def import_sop_docs_endpoint(db: Session = Depends(get_db)):
     result = sop_import.import_sop_docs(db)
@@ -193,3 +223,13 @@ def create_equipment(equipment: schemas.EquipmentCreate, db: Session = Depends(g
 @app.get("/equipment", response_model=list[schemas.EquipmentRead])
 def read_equipment(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     return crud.get_equipment(db, skip=skip, limit=limit)
+
+@app.put("/equipment/{equipment_id}", response_model=schemas.EquipmentRead)
+def update_equipment(equipment_id: int, equipment: schemas.EquipmentUpdate, db: Session = Depends(get_db)):
+    db_equipment = db.query(models.Equipment).filter(models.Equipment.id == equipment_id).first()
+    if not db_equipment:
+        raise HTTPException(status_code=404, detail="Equipment not found")
+    matching_sections = db.query(models.LaboratorySection).filter(models.LaboratorySection.id.in_(equipment.section_ids)).count()
+    if matching_sections != len(set(equipment.section_ids)):
+        raise HTTPException(status_code=404, detail="One or more selected sections were not found")
+    return crud.update_equipment(db, db_equipment, equipment)
