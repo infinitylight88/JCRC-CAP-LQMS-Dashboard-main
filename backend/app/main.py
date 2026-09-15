@@ -1,10 +1,30 @@
-from fastapi import Depends, FastAPI, HTTPException
+"""
+Main FastAPI application for the LabQMS backend.
+
+This module defines the HTTP API surface used by the frontend(s). It
+initializes the database, mounts CORS middleware for local development,
+and exposes endpoints for sections, SOPs, tests, competency procedures,
+staff, competency records and other laboratory resources.
+
+Keep this file focused on request/response routing; business logic
+lives in `crud.py` and data shapes in `schemas.py`.
+"""
+
+# Backend request flow:
+# Uvicorn imports `app` from this module -> startup creates/checks the database
+# schema and seeds reference data -> a route receives an HTTP request -> FastAPI
+# supplies a SQLAlchemy session from database.get_db -> crud.py reads/writes the
+# database -> a Pydantic schema serializes the response for the React clients.
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 from . import crud, models, schemas, sop_import, section_mapping
 from .database import engine, get_db, SessionLocal, ensure_schema_updates
 
+# Import-time preparation makes a fresh local SQLite database usable without a
+# separate migration command.  Production deployments should run migrations as
+# an explicit deployment step rather than relying on this convenience setup.
 models.Base.metadata.create_all(bind=engine)
 ensure_schema_updates()
 with SessionLocal() as db:
@@ -14,10 +34,24 @@ with SessionLocal() as db:
 # It bootstraps the database, imports SOP documents, and exposes all routes used by the frontend.
 app = FastAPI(title="LabQMS Backend")
 
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    try:
+        print(f"Incoming request: {request.method} {request.url.path} query={request.url.query}")
+    except Exception:
+        pass
+    response = await call_next(request)
+    try:
+        print(f"Response status: {response.status_code} for {request.method} {request.url.path}")
+    except Exception:
+        pass
+    return response
+
 @app.on_event("startup")
 def import_sop_docs_on_startup():
-    # Startup hook runs when the backend starts.
-    # It imports SOP books from the docs folder and ensures section mappings are refreshed.
+    # Startup hook: read SOP source documents, persist any new records, then
+    # refresh the section-to-SOP links consumed by the frontend's section views.
     with SessionLocal() as db:
         result = sop_import.import_sop_docs(db)
         section_mapping.seed_sections_and_sop_links(db)
@@ -26,7 +60,9 @@ def import_sop_docs_on_startup():
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    # Development helper: allow all origins so local dev frontends can access APIs easily.
+    # In production, tighten this to specific origins.
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -107,9 +143,10 @@ def create_competency_record(record: schemas.CompetencyRecordCreate, db: Session
         models.CompetencyRecord.test_id == record.test_id,
     ).all()
     phases = {item.assessment_phase for item in previous}
-    allowed = "Initial" if "Initial" not in phases else ("6-Mo" if "6-Mo" not in phases else "Annual")
-    if record.assessment_phase != allowed:
-        raise HTTPException(status_code=400, detail=f"The next permitted assessment for this staff member and procedure is {allowed}.")
+    # Allow adding competency records in any order (Initial, 6-Mo, Annual).
+    # Prevent adding the same assessment phase twice for the same staff/test.
+    if record.assessment_phase in phases:
+        raise HTTPException(status_code=400, detail="An assessment with this phase already exists for this staff member and procedure")
     return crud.create_competency_record(db, record)
 
 @app.get("/competency-records", response_model=list[schemas.CompetencyRecordRead])
@@ -223,6 +260,11 @@ def create_equipment(equipment: schemas.EquipmentCreate, db: Session = Depends(g
 @app.get("/equipment", response_model=list[schemas.EquipmentRead])
 def read_equipment(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     return crud.get_equipment(db, skip=skip, limit=limit)
+
+
+@app.get('/_routes')
+def list_routes():
+    return [route.path for route in app.routes]
 
 @app.put("/equipment/{equipment_id}", response_model=schemas.EquipmentRead)
 def update_equipment(equipment_id: int, equipment: schemas.EquipmentUpdate, db: Session = Depends(get_db)):

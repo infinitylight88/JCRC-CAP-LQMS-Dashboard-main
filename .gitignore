@@ -30,3 +30,15 @@ dist/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Additional ignores
+frontend/node_modules/
+CAP_OS/node_modules/
+frontend/dist/
+CAP_OS/dist/
+.venv-win/
+*.env
+*.log
+__pycache__/
+.pytest_cache/
+coverage/

@@ -1,3 +1,12 @@
+"""
+Database CRUD helpers used by the FastAPI routes.
+
+Each function receives a SQLAlchemy `Session` and performs a single
+purpose database operation: create, read, update, or delete records.
+Keep business rules here (validation that requires DB lookups), but
+avoid direct HTTP logic — that belongs in the route handlers.
+"""
+
 from datetime import date
 from sqlalchemy.orm import Session
 import uuid
@@ -19,6 +28,7 @@ def generate_competency_code():
 
 
 def get_sections(db: Session):
+    """Return all laboratory sections ordered by code."""
     return db.query(models.LaboratorySection).order_by(models.LaboratorySection.code).all()
 
 
@@ -33,6 +43,13 @@ def get_tests(db: Session):
 
 # Creates a new staff member and associates them with sections and competency procedures.
 def create_staff(db: Session, staff: schemas.StaffCreate):
+    """Create a new Staff record and associated sections/competency records.
+
+    - `staff` is a Pydantic model parsed from the incoming request.
+    - The function generates a unique `employee_number` and persists
+        any supplied competency records by creating CompetencyRecord rows
+        linked to the newly created staff.
+    """
     data = staff.dict(exclude={"section_ids", "competency_procedure_ids", "competency_records"})
     db_staff = models.Staff(**data, employee_number=generate_staff_code(), section_id=staff.section_ids[0])
     db.add(db_staff)
@@ -81,6 +98,11 @@ def get_staff(db: Session, skip: int = 0, limit: int = 100):
 # When a competency procedure is created, a corresponding Test record is also created.
 # This keeps the competency process connected to the laboratory test catalog.
 def create_competency_procedure(db: Session, procedure: schemas.CompetencyProcedureCreate):
+    """Create a competency procedure along with a generated Test.
+
+    The procedure is linked to a Test (used for competency records),
+    associated SOPs, and optional equipment.
+    """
     code = generate_competency_code()
     test = models.Test(code=code, name=procedure.title, section_id=procedure.section_id, active=True)
     db.add(test)
@@ -97,10 +119,12 @@ def create_competency_procedure(db: Session, procedure: schemas.CompetencyProced
 
 
 def get_competency_procedures(db: Session, skip: int = 0, limit: int = 100):
+    """Return competency procedures with optional pagination."""
     return db.query(models.CompetencyProcedure).order_by(models.CompetencyProcedure.code).offset(skip).limit(limit).all()
 
 
 def create_competency_record(db: Session, record: schemas.CompetencyRecordCreate):
+    """Persist a competency assessment record and its linked SOPs."""
     record_data = record.dict(exclude={"sop_ids"})
     db_record = models.CompetencyRecord(**record_data)
     db_record.sops = db.query(models.SOP).filter(models.SOP.id.in_(record.sop_ids)).all()

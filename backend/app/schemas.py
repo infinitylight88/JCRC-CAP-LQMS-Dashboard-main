@@ -1,3 +1,11 @@
+"""
+Pydantic schema definitions for request and response models.
+
+Each class represents the shape of data exchanged over the HTTP API.
+Use these models in FastAPI route signatures to validate incoming JSON
+and to generate OpenAPI documentation automatically.
+"""
+
 from __future__ import annotations
 from datetime import date, datetime
 from typing import Optional
@@ -5,8 +13,6 @@ from pydantic import Field
 
 from pydantic import BaseModel
 
-# This file defines the API contracts between the frontend and backend.
-# Each class describes what data is expected when a request is sent and what is returned to the browser.
 
 class LaboratorySectionRead(BaseModel):
     id: int

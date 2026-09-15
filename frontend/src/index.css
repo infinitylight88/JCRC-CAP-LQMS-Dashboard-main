@@ -219,6 +219,34 @@ button {
   border-bottom: 1px solid rgba(216, 226, 243, 0.95);
 }
 
+.main-admin-link {
+  align-self: center;
+  margin-left: auto;
+  padding: 10px 14px;
+  border: 1px solid rgba(23, 78, 166, 0.28);
+  border-radius: 999px;
+  color: var(--primary);
+  background: rgba(255, 255, 255, 0.7);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.main-admin-link:hover,
+.main-admin-link:focus-visible {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  transform: translateY(-1px);
+}
+
+@media (max-width: 760px) {
+  .main-admin-link {
+    margin-left: 0;
+  }
+}
+
 .tab-button {
   border: 1px solid transparent;
   background: #f8fbff;

@@ -3,8 +3,12 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
 
-// This is the browser entry point for the React app.
-// It mounts the main dashboard component into the root HTML element.
+// LabQMS browser entry point.
+// Flow: index.html provides #root -> this file starts React -> App renders the
+// dashboard routes/views.  Components request `/api/...`; Vite forwards that
+// prefix to the FastAPI service (see vite.config.js) during local development.
+// StrictMode intentionally re-renders development components to surface unsafe
+// side effects before the application is deployed.
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <App />

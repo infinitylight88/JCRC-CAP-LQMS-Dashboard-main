@@ -1,9 +1,23 @@
 import React, { useEffect, useState, useRef } from 'react';
+/**
+ * Main application entry for the React frontend.
+ *
+ * This component loads core datasets from the backend on startup
+ * and renders the tabbed interface used for data entry and review.
+ *
+ * Keep this file focused on composition of smaller components and
+ * delegate API calls to `api` (axios instance) and business logic to
+ * helper functions where possible.
+ */
 import axios from 'axios';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api'
 });
+
+// Expose the resolved API base for debugging in the UI and console.
+const apiBase = api.defaults.baseURL;
+console.info('Frontend API baseURL:', apiBase);
 
 // The main app is a single-page dashboard for the laboratory quality system.
 // The primary navigation stays focused on the four operational workspaces.
@@ -42,6 +56,7 @@ function App() {
   const [editingStaffId, setEditingStaffId] = useState(null);
   const [editingCompetencyId, setEditingCompetencyId] = useState(null);
   const [renewingCompetencyId, setRenewingCompetencyId] = useState(null);
+  const [addingCompetencyStaffId, setAddingCompetencyStaffId] = useState(null);
   const [historyCompetencyKey, setHistoryCompetencyKey] = useState(null);
   const [expandedExpiredStaff, setExpandedExpiredStaff] = useState([]);
   const [staffCompetencyDetails, setStaffCompetencyDetails] = useState({});
@@ -131,8 +146,27 @@ function App() {
     if (competencyResult.status === 'fulfilled') setCompetencyRecords(competencyResult.value.data);
     if (sectionsResult.status === 'fulfilled') setSections(sectionsResult.value.data);
 
-    const failures = [sopBookResult, sopResult, equipmentResult, testResult, procedureResult, staffResult, competencyResult, sectionsResult]
-      .filter((result) => result.status === 'rejected');
+    // Debug: log counts so dev console shows whether data was actually received
+    try {
+      console.log('Loaded counts:', {
+        sopBooks: sopBookResult.status === 'fulfilled' ? sopBookResult.value.data.length : 0,
+        sops: sopResult.status === 'fulfilled' ? sopResult.value.data.length : 0,
+        equipment: equipmentResult.status === 'fulfilled' ? equipmentResult.value.data.length : 0,
+        tests: testResult.status === 'fulfilled' ? testResult.value.data.length : 0,
+        competencyProcedures: procedureResult.status === 'fulfilled' ? procedureResult.value.data.length : 0,
+        staff: staffResult.status === 'fulfilled' ? staffResult.value.data.length : 0,
+        competencyRecords: competencyResult.status === 'fulfilled' ? competencyResult.value.data.length : 0,
+        sections: sectionsResult.status === 'fulfilled' ? sectionsResult.value.data.length : 0,
+      });
+    } catch (e) {
+      console.warn('Debug log failed', e);
+    }
+
+    // Treat competency-procedures as non-fatal: some backends may not expose it.
+    const settled = [sopBookResult, sopResult, equipmentResult, testResult, procedureResult, staffResult, competencyResult, sectionsResult];
+    const nonCriticalIndices = [4]; // index 4 === procedureResult (competency-procedures)
+    const failures = settled.filter((result, idx) => result.status === 'rejected' && !nonCriticalIndices.includes(idx));
+    if (procedureResult.status === 'rejected') console.warn('/competency-procedures failed to load; continuing without it.');
     setLoadError(failures.length ? 'Some records could not be loaded. Refresh the page after checking that the API is running.' : '');
   };
 
@@ -199,8 +233,11 @@ function App() {
       await fetchAll();
       resetFn();
     } catch (error) {
-      console.error('Submit error:', error.response?.data || error.message);
-      alert('Error saving: ' + (error.response?.data?.detail || error.message));
+      const status = error.response?.status;
+      const data = error.response?.data;
+      console.error('Submit error:', { status, data, message: error.message });
+      const detail = data?.detail || JSON.stringify(data) || error.message;
+      alert(`Error saving: ${detail} (status: ${status || 'unknown'})`);
     }
   };
 
@@ -300,6 +337,10 @@ function App() {
   const toggleStaff = (staffId) => setExpandedStaff((current) => current.includes(staffId)
     ? current.filter((id) => id !== staffId)
     : [...current, staffId]);
+  const startAddingCompetency = (staffId) => {
+    setAddingCompetencyStaffId(staffId);
+    setCompetencyForm({ ...competencyForm, staff_id: String(staffId), procedure_id: '', assessment_phase: 'Initial', assessment_date: '', next_review_date: '', competency_status: 'Competent', notes: '' });
+  };
   const currentCompetencyRecords = Object.values(competencyRecords.reduce((records, record) => {
     const key = `${record.staff_id}-${record.test_id}`;
     if (!records[key] || record.id > records[key].id) records[key] = record;
@@ -518,6 +559,14 @@ function App() {
           <div className="grid gap-6 lg:grid-cols-3">
             <Panel title="Section Analytics">
               <div className="analytics-links" aria-label="Section analytics links">
+                <a className="analytics-link cobas" href="http://10.4.45.203:8000/ui" target="_blank" rel="noreferrer">
+                  <span className="analytics-link-kicker">Chemistry</span>
+                  <span>COBAS Analytics</span>
+                </a>
+                <a className="analytics-link sysmex" href="#hematology-live-sysmex-analytics">
+                  <span className="analytics-link-kicker">Hematology</span>
+                  <span>Live Sysmex Analytics</span>
+                </a>
                 <a className="analytics-link microbiology" href="#microbiology">
                   <span className="analytics-link-kicker">Department</span>
                   <span>Microbiology</span>
@@ -525,14 +574,6 @@ function App() {
                 <a className="analytics-link virology" href="#virology">
                   <span className="analytics-link-kicker">Department</span>
                   <span>Virology</span>
-                </a>
-                <a className="analytics-link sysmex" href="#hematology-live-sysmex-analytics">
-                  <span className="analytics-link-kicker">Hematology</span>
-                  <span>Live Sysmex Analytics</span>
-                </a>
-                <a className="analytics-link cobas" href="#chemistry-cobas-analytics">
-                  <span className="analytics-link-kicker">Chemistry</span>
-                  <span>COBAS Analytics</span>
                 </a>
               </div>
               <p className="panel-note">Quick links for the section-level analytics workspaces.</p>
@@ -827,9 +868,16 @@ function App() {
             {showStaffForm && <Panel title="New Laboratory Staff Details">
               <form className="form-grid" onSubmit={(e) => {
                 e.preventDefault();
-                // The staff save triggers backend validation and automatically creates competency records for the chosen competency procedures.
+                // Build section_ids payload: include the primary `section_id` plus any additional sections.
+                const primary = staffForm.section_id ? [Number(staffForm.section_id)] : [];
+                const additional = Array.isArray(staffForm.section_ids) ? staffForm.section_ids.map(Number) : [];
+                const section_ids = Array.from(new Set([...primary, ...additional].filter(Boolean)));
+
+                // The staff save triggers backend validation and automatically creates competency records
+                // for the chosen competency procedures. Ensure `section_ids` is provided to the API.
                 submit('/staff', {
                   ...staffForm,
+                  section_ids,
                   competency_records: staffForm.competency_procedure_ids.map((procedureId) => ({
                     procedure_id: Number(procedureId),
                     ...(staffCompetencyDetails[procedureId] || {})
@@ -901,7 +949,7 @@ function App() {
                   </div>}
                   <small className="field-help">Add the competency type, testing date, and expiry date for each selected competency.</small>
                 </label>
-                <button className="button" type="submit" disabled={staffForm.section_ids.length === 0}>Register Laboratory Staff</button>
+                <button className="button" type="submit" disabled={!(staffForm.section_id || (staffForm.section_ids && staffForm.section_ids.length > 0))}>Register Laboratory Staff</button>
               </form>
             </Panel>}
 
@@ -930,7 +978,16 @@ function App() {
                         {memberOpen && <div className="staff-profile-details">
                           {editingStaffId === member.id ? <StaffEditForm staff={member} sections={sections} onCancel={() => setEditingStaffId(null)} onSave={updateStaff} /> : <>
                             <div className="staff-contact"><span>{member.email || 'No email'}</span><span>{member.phone || 'No phone'}</span></div>
-                            <h3>Competencies</h3>
+                            <div className="staff-competency-heading"><h3>Competencies</h3><button className="button button-secondary" type="button" onClick={() => addingCompetencyStaffId === member.id ? setAddingCompetencyStaffId(null) : startAddingCompetency(member.id)}>{addingCompetencyStaffId === member.id ? 'Cancel' : 'Add competency'}</button></div>
+                            {addingCompetencyStaffId === member.id && <form className="form-grid staff-competency-form" onSubmit={(event) => { event.preventDefault(); submit('/competency-records', competencyForm, () => { resetCompetency(); setAddingCompetencyStaffId(null); }); }}>
+                              <label className="form-field"><span>Competency</span><select className="input" name="procedure_id" value={competencyForm.procedure_id} onChange={(event) => { const procedureId = event.target.value; setCompetencyForm((current) => ({ ...current, procedure_id: procedureId, assessment_phase: nextAssessmentPhase(member.id, procedureId) })); }} required><option value="">Select competency</option>{competencyProcedures.map((procedure) => <option key={procedure.id} value={procedure.id}>{procedure.code} - {procedure.title}</option>)}</select></label>
+                              <label className="form-field"><span>Competency type</span><select className="input" name="assessment_phase" value={competencyForm.assessment_phase} onChange={onChange(setCompetencyForm)}><option>Initial</option><option>6-Mo</option><option>Annual</option></select></label>
+                              <label className="form-field"><span>Date of competency testing</span><input className="input" type="date" name="assessment_date" min="1900-01-01" max="2100-12-31" value={competencyForm.assessment_date} onChange={onChange(setCompetencyForm)} required /></label>
+                              <label className="form-field"><span>Expiry date</span><input className="input" type="date" name="next_review_date" min="1900-01-01" max="2100-12-31" value={competencyForm.next_review_date} onChange={onChange(setCompetencyForm)} /></label>
+                              <label className="form-field"><span>Status</span><select className="input" name="competency_status" value={competencyForm.competency_status} onChange={onChange(setCompetencyForm)}><option>Competent</option><option>Needs follow-up</option><option>Not Competent</option></select></label>
+                              <label className="form-field"><span>Notes</span><textarea className="input" name="notes" value={competencyForm.notes} onChange={onChange(setCompetencyForm)} rows="3" /></label>
+                              <button className="button" type="submit">Save competency</button>
+                            </form>}
                             <CompetencyTable records={records} allRecords={competencyRecords} procedures={competencyProcedures} editingId={editingCompetencyId} onEdit={setEditingCompetencyId} onSave={updateCompetencyRecord} onCancel={() => setEditingCompetencyId(null)} historyKey={historyCompetencyKey} onHistory={setHistoryCompetencyKey} renewingId={renewingCompetencyId} onRenew={setRenewingCompetencyId} onRenewSave={renewCompetencyRecord} onRenewCancel={() => setRenewingCompetencyId(null)} />
                           </>}
                         </div>}
@@ -1034,6 +1091,7 @@ function App() {
             <SummaryCard title="Staff" value={staff.length} />
             <SummaryCard title="Equipment" value={equipment.length} />
           </div>
+          <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>API: {apiBase}</div>
           {/* Animated glassy reflective effect that tracks the active tab */}
           <div className="hero-shine" style={{
             width: '140px',
@@ -1053,6 +1111,14 @@ function App() {
                 {tab.label}
               </button>
             ))}
+            <a
+              className="main-admin-link"
+              href="http://10.4.45.203:5174/"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Go to Main Admin Front-End <span aria-hidden="true">↗</span>
+            </a>
           </div>
           <div className="panel-wrapper">
             {panel()}
